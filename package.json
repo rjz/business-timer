@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "Calculate time during working hours",
   "main": "lib/index.js",
-  "types": "lib/types.d.ts",
+  "types": "lib/index.d.ts",
   "scripts": {
     "build": "tsc",
     "pretest": "npm run build",
