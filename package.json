@@ -1,6 +1,6 @@
 {
   "name": "business-timer",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "Calculate time during working hours",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
