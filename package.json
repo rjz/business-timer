@@ -1,0 +1,17 @@
+{
+  "name": "business-timer",
+  "version": "0.0.0",
+  "description": "Calculate time during working hours",
+  "main": "lib/index.js",
+  "types": "lib/types.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "pretest": "npm run build",
+    "test": "node lib/*.test.js"
+  },
+  "author": "RJ Zaworski <rj@rjzaworski.com> (https://rjzaworski.com)",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^4.1.3"
+  }
+}
