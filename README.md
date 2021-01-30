@@ -40,6 +40,7 @@ const opts = {
   holidays: [
     '2021-04-01'
   ],
+  timeZone: 'America/Los_Angeles',
 };
 
 const bt = new BusinessTimer(opts);
