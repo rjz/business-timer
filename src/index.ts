@@ -37,6 +37,7 @@ export const DEFAULT_HOURS: WeeklyHours = [
 export type BusinessTimerOpts = {
   holidays?: ISODate[];
   hours?: WeeklyHours;
+  timeZone?: string | null;
 };
 
 function isoTimeToDuration(isoTime: ISOTime): number {
@@ -74,6 +75,7 @@ function dailyHoursToDuration(dailyHours: DailyHours): ParsedHours {
 }
 
 export default class BusinessTimer {
+  private readonly _tzFormatter?: Intl.DateTimeFormat;
   private _holidays: ISODate[];
   private _hours: WeeklyHours;
   private _parsedHours: ParsedHours[];
@@ -82,19 +84,42 @@ export default class BusinessTimer {
   constructor({
     holidays = [],
     hours = DEFAULT_HOURS,
+    timeZone = null,
   }: BusinessTimerOpts = {}) {
+    if (timeZone) {
+      this._tzFormatter = new Intl.DateTimeFormat("en-ca", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    }
+
+    this._hours = hours;
+
     // TODO: validation
     this._holidays = holidays;
-    this._hours = hours;
 
     // Precompute durations
     this._parsedHours = hours.map(dailyHoursToDuration);
   }
 
+  private _toUTC(d: Date): Date {
+    if (!this._tzFormatter) {
+      return d;
+    }
+    const hackyISODate = this._tzFormatter.format(d).replace(", ", "T") + "Z";
+    return new Date(hackyISODate);
+  }
+
   /** Compute elapsed business time (in milliseconds) between two dates */
   public diff(start: DateLike, end: DateLike): number {
-    let d1 = new Date(start);
-    let d2 = new Date(end);
+    let d1 = this._toUTC(new Date(start));
+    let d2 = this._toUTC(new Date(end));
 
     if (this.isBeforeOpen(d1)) {
       // We'll start counting when the business opens

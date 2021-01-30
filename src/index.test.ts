@@ -1,4 +1,4 @@
-import BusinessTimer from "./index";
+import BusinessTimer, { BusinessTimerOpts } from "./index";
 const HOUR = 3600 * 1000;
 
 const result = {
@@ -10,7 +10,7 @@ const HOLIDAYS = [
   "2021-01-07", // Happy Thursday!
 ];
 
-const tests: [string, [string, string, string[]?], number][] = [
+const tests: [string, [string, string, BusinessTimerOpts?], number][] = [
   [
     "Friday morning",
     ["2021-01-01T08:30:00Z", "2021-01-01T09:00:00Z"],
@@ -62,31 +62,85 @@ const tests: [string, [string, string, string[]?], number][] = [
   ],
   [
     "Friday to following Monday with Holiday",
-    ["2021-01-01T08:00:00Z", "2021-01-11T08:00:00Z", HOLIDAYS],
+    ["2021-01-01T08:00:00Z", "2021-01-11T08:00:00Z", { holidays: HOLIDAYS }],
     5 * 9 * HOUR,
   ],
   [
     "Starting on Holiday to next Monday",
-    ["2021-01-07T10:00:00Z", "2021-01-11T08:00:00Z", HOLIDAYS],
+    ["2021-01-07T10:00:00Z", "2021-01-11T08:00:00Z", { holidays: HOLIDAYS }],
     9 * HOUR,
   ],
   [
     "Starting before-hours on Holiday to next Monday",
-    ["2021-01-07T04:00:00Z", "2021-01-11T08:00:00Z", HOLIDAYS],
+    ["2021-01-07T04:00:00Z", "2021-01-11T08:00:00Z", { holidays: HOLIDAYS }],
     9 * HOUR,
   ],
   [
     "Starting after-hours on Holiday to next Monday",
-    ["2021-01-07T22:00:00Z", "2021-01-11T08:00:00Z", HOLIDAYS],
+    ["2021-01-07T22:00:00Z", "2021-01-11T08:00:00Z", { holidays: HOLIDAYS }],
     9 * HOUR,
+  ],
+  [
+    "(DST) LA: springing forward",
+    [
+      "2021-03-12T16:00:00-08:00",
+      "2021-03-15T10:00:00-07:00",
+      { timeZone: "America/Los_Angeles" },
+    ],
+    3 * HOUR,
+  ],
+  [
+    "(DST) LA: springing forward through holiday",
+    [
+      "2021-03-12T16:00:00-08:00",
+      "2021-03-16T10:00:00-07:00",
+      { holidays: ["2021-03-15"], timeZone: "America/Los_Angeles" },
+    ],
+    3 * HOUR,
+  ],
+
+  [
+    "(DST) LA: falling back",
+    [
+      "2021-11-05T16:00:00-07:00",
+      "2021-11-08T10:00:00-08:00",
+      { timeZone: "America/Los_Angeles" },
+    ],
+    3 * HOUR,
+  ],
+  [
+    "(DST) LA: falling back through holiday",
+    [
+      "2021-03-12T16:00:00-08:00",
+      "2021-03-15T10:00:00-07:00",
+      { holidays: ["2021-11-08"], timeZone: "America/Los_Angeles" },
+    ],
+    3 * HOUR,
+  ],
+
+  [
+    "(TZ) Singapore: anytime",
+    [
+      "2021-11-05T16:00:00+08:00",
+      "2021-11-08T10:00:00+08:00",
+      { timeZone: "Asia/Singapore" },
+    ],
+    3 * HOUR,
+  ],
+
+  [
+    "(TZ) Singapore: through holiday",
+    [
+      "2021-11-05T16:00:00+08:00",
+      "2021-11-09T10:00:00+08:00",
+      { holidays: ["2021-11-08"], timeZone: "Asia/Singapore" },
+    ],
+    3 * HOUR,
   ],
 ];
 
 tests.forEach(function([desc, args, expected], i) {
-  const t = new BusinessTimer({
-    holidays: args[2],
-  });
-
+  const t = new BusinessTimer(args[2]);
   const actual = t.diff(args[0], args[1]);
   if (actual === expected) {
     result.pass++;
