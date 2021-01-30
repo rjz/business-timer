@@ -18,13 +18,16 @@ export declare const DEFAULT_HOURS: WeeklyHours;
 export declare type BusinessTimerOpts = {
     holidays?: ISODate[];
     hours?: WeeklyHours;
+    timeZone?: string | null;
 };
 export default class BusinessTimer {
+    private readonly _tzFormatter?;
     private _holidays;
     private _hours;
     private _parsedHours;
     private _knownWorkingDays;
-    constructor({ holidays, hours, }?: BusinessTimerOpts);
+    constructor({ holidays, hours, timeZone, }?: BusinessTimerOpts);
+    private _toUTC;
     /** Compute elapsed business time (in milliseconds) between two dates */
     diff(start: DateLike, end: DateLike): number;
     private isWorkingDay;
