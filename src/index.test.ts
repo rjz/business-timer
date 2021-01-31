@@ -1,11 +1,6 @@
 import BusinessTimer, { BusinessTimerOpts } from "./index";
 const HOUR = 3600 * 1000;
 
-const result = {
-  fail: 0,
-  pass: 0,
-};
-
 const HOLIDAYS = [
   "2021-01-07", // Happy Thursday!
 ];
@@ -139,16 +134,31 @@ const tests: [string, [string, string, BusinessTimerOpts?], number][] = [
   ],
 ];
 
+const result = {
+  fail: 0,
+  pass: 0,
+  skipped: tests.length,
+};
+
 tests.forEach(function([desc, args, expected], i) {
   const t = new BusinessTimer(args[2]);
   const actual = t.diff(args[0], args[1]);
+  result.skipped--;
   if (actual === expected) {
     result.pass++;
   } else {
-    console.log(`FAIL#${i} '${desc}'`, {
-      actual: actual / HOUR,
-      expected: expected / HOUR,
-    });
+    console.log(
+      `FAIL#${i} '${desc}'`,
+      JSON.stringify(
+        {
+          actual: actual / HOUR,
+          expected: expected / HOUR,
+          args,
+        },
+        null,
+        2
+      )
+    );
     result.fail++;
   }
 });

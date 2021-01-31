@@ -21,21 +21,22 @@ export declare type BusinessTimerOpts = {
     timeZone?: string | null;
 };
 export default class BusinessTimer {
-    private readonly _tzFormatter?;
-    private _holidays;
-    private _hours;
-    private _parsedHours;
+    private readonly _dateTimeFormat?;
+    private readonly _hours;
+    private readonly _holidays;
     private _knownWorkingDays;
     constructor({ holidays, hours, timeZone, }?: BusinessTimerOpts);
-    private _toUTC;
     /** Compute elapsed business time (in milliseconds) between two dates */
     diff(start: DateLike, end: DateLike): number;
-    private isWorkingDay;
-    private open;
-    private close;
-    private nextOpen;
-    private previousClose;
-    private isBeforeOpen;
-    private isAfterClose;
+    isOpenDay(dl: DateLike): boolean;
+    isOpenTime(dl: DateLike): boolean;
+    private _toTimestamp;
+    private _isWorkingDay;
+    private _open;
+    private _close;
+    private _nextOpen;
+    private _previousClose;
+    private _lookupHours;
+    private _isOpen;
 }
 export {};

@@ -57,8 +57,12 @@ function isoTimeToDuration(isoTime: ISOTime): number {
   return duration;
 }
 
-function startOfDay(date: Date): number {
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+function startOfDay(ts: number): number {
+  return Math.floor(ts / DAY) * DAY;
+}
+
+function secondsSinceMidnight(ts: number): number {
+  return ts % DAY;
 }
 
 type ParsedHours = { start: number; end: number; duration: number };
@@ -74,20 +78,24 @@ function dailyHoursToDuration(dailyHours: DailyHours): ParsedHours {
   return parsed;
 }
 
+type DaysSinceEpoch = number;
+
 export default class BusinessTimer {
-  private readonly _tzFormatter?: Intl.DateTimeFormat;
-  private _holidays: ISODate[];
-  private _hours: WeeklyHours;
-  private _parsedHours: ParsedHours[];
-  private _knownWorkingDays: Set<ISODate> = new Set();
+  private readonly _dateTimeFormat?: Intl.DateTimeFormat;
+  private readonly _hours: ParsedHours[];
+  private readonly _holidays: Set<DaysSinceEpoch> = new Set();
+  private _knownWorkingDays: Set<DaysSinceEpoch> = new Set();
 
   constructor({
     holidays = [],
     hours = DEFAULT_HOURS,
     timeZone = null,
   }: BusinessTimerOpts = {}) {
+    // TODO: validation
+
     if (timeZone) {
-      this._tzFormatter = new Intl.DateTimeFormat("en-ca", {
+      // `en-ca` (YYYY-MM-DD) to simplify parsing.
+      this._dateTimeFormat = new Intl.DateTimeFormat("en-ca", {
         timeZone,
         year: "numeric",
         month: "2-digit",
@@ -99,46 +107,36 @@ export default class BusinessTimer {
       });
     }
 
-    this._hours = hours;
-
-    // TODO: validation
-    this._holidays = holidays;
+    // Parse holidays into their offset (in days) from the start of the epoch
+    for (const h of holidays) {
+      const [year, month, day] = h.split("-").map((x) => parseInt(x, 10));
+      this._holidays.add(Math.floor(Date.UTC(year, month - 1, day) / DAY));
+    }
 
     // Precompute durations
-    this._parsedHours = hours.map(dailyHoursToDuration);
-  }
-
-  private _toUTC(d: Date): Date {
-    if (!this._tzFormatter) {
-      return d;
-    }
-    const hackyISODate = this._tzFormatter.format(d).replace(", ", "T") + "Z";
-    return new Date(hackyISODate);
+    this._hours = hours.map(dailyHoursToDuration);
   }
 
   /** Compute elapsed business time (in milliseconds) between two dates */
   public diff(start: DateLike, end: DateLike): number {
-    let d1 = this._toUTC(new Date(start));
-    let d2 = this._toUTC(new Date(end));
+    let t1 = this._toTimestamp(new Date(start));
 
-    if (this.isBeforeOpen(d1)) {
-      // We'll start counting when the business opens
-      d1 = this.nextOpen(d1);
-    } else if (this.isAfterClose(d1) || !this.isWorkingDay(d1)) {
-      // We'll start counting on the next business day
-      d1 = this.nextOpen(d1.getTime() + DAY);
+    // If the starting time falls outside of business hours, fast-forward to the
+    // start of business on the next working day.
+    if (!this._isOpen(t1) || !this._isWorkingDay(t1)) {
+      t1 = this._nextOpen(t1);
     }
 
-    if (this.isBeforeOpen(d2) || !this.isWorkingDay(d2)) {
-      d2 = this.previousClose(d2.getTime());
-    } else if (this.isAfterClose(d2)) {
-      d2 = this.previousClose(d2);
+    // If the ending time falls outside of business hours, rewind to close of
+    // business on the most recent working day.
+    let t2 = this._toTimestamp(new Date(end));
+    if (!this._isOpen(t2) || !this._isWorkingDay(t2)) {
+      t2 = this._previousClose(t2);
     }
 
-    const t1 = d1.getTime();
-    const t2 = d2.getTime();
+    // Short-circuit cases where the adjusted time range is negative or fall
+    // within the same business day.
     const totalDiff = t2 - t1;
-
     if (totalDiff <= 0) {
       return 0;
     } else if (totalDiff <= DAY) {
@@ -146,10 +144,10 @@ export default class BusinessTimer {
     }
 
     // Business hours on the first day
-    let diff = this.close(d1) - t1;
+    let diff = this._close(t1) - t1;
 
     // Plus business hours on the last day
-    diff += t2 - this.open(d2);
+    diff += t2 - this._open(t2);
 
     // Plus business hours for all the days in between
     //
@@ -157,81 +155,108 @@ export default class BusinessTimer {
     // days, minus weekend days, minus holidays in the range. Iteration's fine
     // for now.
     for (let t = t1 + DAY; t < t2; t += DAY) {
-      const day = new Date(t);
-      if (this.isWorkingDay(day)) {
-        diff += this._parsedHours[day.getUTCDay()].duration;
+      if (this._isWorkingDay(t)) {
+        diff += this._lookupHours(t).duration;
       }
     }
 
     return diff;
   }
 
-  private isWorkingDay(d: Date): boolean {
-    const isoDate = d.toISOString().slice(0, 10);
-    if (this._knownWorkingDays.has(isoDate)) {
+  public isOpenDay(dl: DateLike): boolean {
+    const ts = this._toTimestamp(dl);
+    return this._isWorkingDay(ts);
+  }
+
+  public isOpenTime(dl: DateLike): boolean {
+    const ts = this._toTimestamp(dl);
+    return this._isOpen(ts);
+  }
+
+  private _toTimestamp(dl: DateLike): number {
+    const d = new Date(dl);
+    if (!this._dateTimeFormat) {
+      return d.getTime();
+    }
+
+    // Map the date onto a virtual, "UTC-like" timeline by pretending the local
+    // time determined by `Intl.DateTimeFormat` is an offset-less ISO timestamp.
+    const hackyISODate =
+      this._dateTimeFormat.format(d).replace(", ", "T") + "Z";
+    return new Date(hackyISODate).getTime();
+  }
+
+  private _isWorkingDay(ts: number): boolean {
+    const daysSinceEpoch = Math.floor(ts / DAY);
+    if (this._knownWorkingDays.has(daysSinceEpoch)) {
       return true;
     }
 
-    const day = d.getUTCDay();
-    if (this._hours[day] === null) {
+    const { start } = this._lookupHours(ts);
+    if (start === -1) {
       return false;
     }
 
-    for (const holiday of this._holidays) {
-      if (isoDate === holiday) {
-        return false;
-      }
+    if (this._holidays.has(daysSinceEpoch)) {
+      return false;
     }
 
-    this._knownWorkingDays.add(isoDate);
+    this._knownWorkingDays.add(daysSinceEpoch);
     return true;
   }
 
-  private open(d: Date): number {
-    const { start } = this._parsedHours[d.getUTCDay()];
-    return startOfDay(d) + start;
+  private _open(ts: number): number {
+    const { start } = this._lookupHours(ts);
+    return startOfDay(ts) + start;
   }
 
-  private close(d: Date): number {
-    const { end } = this._parsedHours[d.getUTCDay()];
-    return startOfDay(d) + end;
+  private _close(ts: number): number {
+    const { end } = this._lookupHours(ts);
+    return startOfDay(ts) + end;
   }
 
-  private nextOpen(d: DateLike): Date {
-    let day = new Date(d);
-    while (!this.isWorkingDay(day)) {
-      day = new Date(day.getTime() + DAY);
+  private _nextOpen(ts: number): number {
+    const { start } = this._lookupHours(ts);
+    if (start === -1 || secondsSinceMidnight(ts) >= start) {
+      // Advance to the next day if this isn't a work day (or we're already past
+      // opening time).
+      ts = startOfDay(ts + DAY);
     }
 
-    return new Date(this.open(day));
-  }
-
-  private previousClose(d: DateLike): Date {
-    let prevDay = new Date(d);
-    while (!this.isWorkingDay(prevDay)) {
-      prevDay = new Date(prevDay.getTime() - DAY);
+    while (!this._isWorkingDay(ts)) {
+      ts += DAY;
     }
 
-    return new Date(this.close(prevDay));
+    return this._open(ts);
   }
 
-  private isBeforeOpen(d: Date): boolean {
-    const dailyHours = this._hours[d.getUTCDay()];
-    if (dailyHours === null) {
+  private _previousClose(ts: number): number {
+    const { end } = this._lookupHours(ts);
+    if (end === -1 || secondsSinceMidnight(ts) <= end) {
+      // Rewind to the previous day if this isn't a work day or we're still
+      // before closing time.
+      ts = startOfDay(ts - DAY);
+    }
+
+    while (!this._isWorkingDay(ts)) {
+      ts -= DAY;
+    }
+
+    return this._close(ts);
+  }
+
+  private _lookupHours(ts: number): ParsedHours {
+    const day = (Math.floor(ts / DAY) + 4) % 7; // ~ Date.getUTCDay
+    return this._hours[day];
+  }
+
+  private _isOpen(ts: number): boolean {
+    const { end, start } = this._lookupHours(ts);
+    if (start === -1) {
       return true;
     }
 
-    const [startTime] = dailyHours;
-    return d.toISOString().substr(11, 5) < startTime;
-  }
-
-  private isAfterClose(d: Date): boolean {
-    const dailyHours = this._hours[d.getUTCDay()];
-    if (dailyHours === null) {
-      return true;
-    }
-
-    const [, endTime] = dailyHours;
-    return d.toISOString().substr(11, 5) > endTime;
+    const secs = secondsSinceMidnight(ts);
+    return secs >= start && secs <= end;
   }
 }
