@@ -13,7 +13,10 @@ type DailyHours = null | [ISOTime, ISOTime];
 
 type DateLike = Date | string | number;
 
-/** [Sun, Mon, Tue, ...] */
+/** A seven-item array describing operating hours for each day of the week
+ *
+ * Order follows JS' `getDay()`: [Sun, Mon, Tue, ...]
+ * */
 type WeeklyHours = readonly [
   DailyHours,
   DailyHours,
@@ -35,8 +38,21 @@ export const DEFAULT_HOURS: WeeklyHours = [
 ];
 
 export type BusinessTimerOpts = {
+  /** A list of holidays to exclude from the usual work schedule */
   holidays?: ISODate[];
+
+  /** The business hours for each day of the week*/
   hours?: WeeklyHours;
+
+  /** The timezone to use for holidays and hours.
+   *
+   *  To avoid bringing the full IANA database along for the ride, the timezone
+   *  provided here must be understood by `Intl.DateTimeFormat`. Omitting this
+   *  argument will yield unpredictable results when running the timer with
+   *  non-UTC dates across different environments.
+   *
+   *  YMMV.
+   */
   timeZone?: string | null;
 };
 
@@ -78,8 +94,20 @@ function dailyHoursToDuration(dailyHours: DailyHours): ParsedHours {
   return parsed;
 }
 
+function isoDateToDaysSinceEpoch(isoDate: ISODate): number {
+  const [year, month, day] = isoDate.split("-").map((x) => parseInt(x, 10));
+  return Math.floor(Date.UTC(year, month - 1, day) / DAY);
+}
+
 type DaysSinceEpoch = number;
 
+const DEFAULT_OPTS = {
+  holidays : [],
+  hours : DEFAULT_HOURS,
+  timeZone : null,
+};
+
+/** BusinessTimer only counts time during operating hours */
 export default class BusinessTimer {
   private readonly _dateTimeFormat?: Intl.DateTimeFormat;
   private readonly _hours: ParsedHours[];
@@ -90,12 +118,12 @@ export default class BusinessTimer {
     holidays = [],
     hours = DEFAULT_HOURS,
     timeZone = null,
-  }: BusinessTimerOpts = {}) {
-    // TODO: validation
+  }: BusinessTimerOpts = DEFAULT_OPTS) {
+    // TODO: validate options
 
     if (timeZone) {
-      // `en-ca` (YYYY-MM-DD) to simplify parsing.
-      this._dateTimeFormat = new Intl.DateTimeFormat("en-ca", {
+      // `eu-se` (YYYY-MM-DD) to simplify parsing.
+      this._dateTimeFormat = new Intl.DateTimeFormat("eu-se", {
         timeZone,
         year: "numeric",
         month: "2-digit",
@@ -107,13 +135,10 @@ export default class BusinessTimer {
       });
     }
 
-    // Parse holidays into their offset (in days) from the start of the epoch
-    for (const h of holidays) {
-      const [year, month, day] = h.split("-").map((x) => parseInt(x, 10));
-      this._holidays.add(Math.floor(Date.UTC(year, month - 1, day) / DAY));
+    for (const isoHoliday of holidays) {
+      this._holidays.add(isoDateToDaysSinceEpoch(isoHoliday));
     }
 
-    // Precompute durations
     this._hours = hours.map(dailyHoursToDuration);
   }
 
@@ -173,14 +198,21 @@ export default class BusinessTimer {
     return this._isOpen(ts);
   }
 
-  private _toTimestamp(dl: DateLike): number {
-    const d = new Date(dl);
+  /** Turn a date-like object into an epoch timestamp
+   *
+   *  This method enables neighboring calculations to avoid the nastiness of
+   *  dealing in local time by using a cached `Intl.DateTimeFormat` instance (if
+   *  available; see `this._dateTimeFormat`) to project inputs into
+   *  (offset-less) timestamps.
+   *
+   *  It's all just math from here.
+   **/
+  private _toTimestamp(...dl: ConstructorParameters<DateConstructor>): number {
+    const d = new Date(...dl);
     if (!this._dateTimeFormat) {
       return d.getTime();
     }
 
-    // Map the date onto a virtual, "UTC-like" timeline by pretending the local
-    // time determined by `Intl.DateTimeFormat` is an offset-less ISO timestamp.
     const hackyISODate =
       this._dateTimeFormat.format(d).replace(", ", "T") + "Z";
     return new Date(hackyISODate).getTime();
