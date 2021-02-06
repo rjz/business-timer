@@ -18,22 +18,26 @@ declare type WeeklyHours = readonly [
     DailyHours
 ];
 export declare const DEFAULT_HOURS: WeeklyHours;
+/** Options for a new `BusinessTimer` */
 export declare type BusinessTimerOpts = {
     /** A list of holidays to exclude from the usual work schedule */
     holidays?: ISODate[];
     /** The business hours for each day of the week*/
     hours?: WeeklyHours;
-    /** The timezone to use for holidays and hours.
+    /** The timezone for `holidays` and `hours`
      *
      *  To avoid bringing the full IANA database along for the ride, the timezone
-     *  provided here must be understood by `Intl.DateTimeFormat`. Omitting this
-     *  argument will yield unpredictable results when running the timer with
-     *  non-UTC dates across different environments.
+     *  provided here must be understood by the `Intl.DateTimeFormat`
+     *  implementation in the runtime environment.
      *
-     *  YMMV.
+     *  This option may be safely omitted if all dates/times used with
+     *  `BusinessTimer` will already be represented in an offset-less timezone
+     *  (read: UTC).
      */
     timeZone?: string | null;
 };
+/** Default options */
+export declare const DEFAULTS: BusinessTimerOpts;
 /** BusinessTimer only counts time during operating hours */
 export default class BusinessTimer {
     private readonly _dateTimeFormat?;
@@ -43,19 +47,19 @@ export default class BusinessTimer {
     constructor({ holidays, hours, timeZone, }?: BusinessTimerOpts);
     /** Compute elapsed business time (in milliseconds) between two dates */
     diff(start: DateLike, end: DateLike): number;
-    isOpenDay(dl: DateLike): boolean;
-    isOpenTime(dl: DateLike): boolean;
-    /** Turn a date-like object into an epoch timestamp
+    /** Check whether the provided day is a workday */
+    isWorkday(date: DateLike): boolean;
+    /** Check whether the business is open at the given time */
+    isOpen(datetime: DateLike): boolean;
+    /** Turn a date-like object into an offset-less timestamp
      *
-     *  This method enables neighboring calculations to avoid the nastiness of
-     *  dealing in local time by using a cached `Intl.DateTimeFormat` instance (if
-     *  available; see `this._dateTimeFormat`) to project inputs into
-     *  (offset-less) timestamps.
+     *  Discarding offset details allows downstream calculations to avoid the
+     *  vagaries of local time (see also: daylight savings).
      *
      *  It's all just math from here.
      **/
     private _toTimestamp;
-    private _isWorkingDay;
+    private _isWorkday;
     private _open;
     private _close;
     private _nextOpen;

@@ -1,6 +1,6 @@
 # Business Timer
 
-Calculate time during working hours.
+Lightweight utilities for calculating time during business hours.
 
 Installation
 -------------------------------------------------------------------------------
@@ -12,7 +12,7 @@ $ npm i business-timer
 Usage
 -------------------------------------------------------------------------------
 
-Pass a source file by name:
+Create an instance of `BusinessTimer` and put it to work:
 
 ```js
 import BusinessTimer from 'business-timer';
@@ -48,7 +48,15 @@ const bt = new BusinessTimer(opts);
 
 ### diff(begin: DateLike, end: DateLike): number
 
-Computes the time elapsed (in working hours) between two dates.
+Computes the working time elapsed (in ms) between `begin` and `end`.
+
+### isOpen(datetime: DateLike): boolean
+
+Check whether `datetime` falls within business hours
+
+### isWorkday(date: DateLike): boolean
+
+Check whether `date` is a workday for the business
 
 License
 -------------------------------------------------------------------------------

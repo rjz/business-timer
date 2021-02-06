@@ -37,6 +37,7 @@ export const DEFAULT_HOURS: WeeklyHours = [
   null,
 ];
 
+/** Options for a new `BusinessTimer` */
 export type BusinessTimerOpts = {
   /** A list of holidays to exclude from the usual work schedule */
   holidays?: ISODate[];
@@ -44,14 +45,15 @@ export type BusinessTimerOpts = {
   /** The business hours for each day of the week*/
   hours?: WeeklyHours;
 
-  /** The timezone to use for holidays and hours.
+  /** The timezone for `holidays` and `hours`
    *
    *  To avoid bringing the full IANA database along for the ride, the timezone
-   *  provided here must be understood by `Intl.DateTimeFormat`. Omitting this
-   *  argument will yield unpredictable results when running the timer with
-   *  non-UTC dates across different environments.
+   *  provided here must be understood by the `Intl.DateTimeFormat`
+   *  implementation in the runtime environment.
    *
-   *  YMMV.
+   *  This option may be safely omitted if all dates/times used with
+   *  `BusinessTimer` will already be represented in an offset-less timezone
+   *  (read: UTC).
    */
   timeZone?: string | null;
 };
@@ -101,10 +103,11 @@ function isoDateToDaysSinceEpoch(isoDate: ISODate): number {
 
 type DaysSinceEpoch = number;
 
-const DEFAULT_OPTS = {
-  holidays : [],
-  hours : DEFAULT_HOURS,
-  timeZone : null,
+/** Default options */
+export const DEFAULTS: BusinessTimerOpts = {
+  holidays: [],
+  hours: DEFAULT_HOURS,
+  timeZone: null,
 };
 
 /** BusinessTimer only counts time during operating hours */
@@ -118,7 +121,7 @@ export default class BusinessTimer {
     holidays = [],
     hours = DEFAULT_HOURS,
     timeZone = null,
-  }: BusinessTimerOpts = DEFAULT_OPTS) {
+  }: BusinessTimerOpts = DEFAULTS) {
     // TODO: validate options
 
     if (timeZone) {
@@ -148,14 +151,14 @@ export default class BusinessTimer {
 
     // If the starting time falls outside of business hours, fast-forward to the
     // start of business on the next working day.
-    if (!this._isOpen(t1) || !this._isWorkingDay(t1)) {
+    if (!this._isOpen(t1) || !this._isWorkday(t1)) {
       t1 = this._nextOpen(t1);
     }
 
     // If the ending time falls outside of business hours, rewind to close of
     // business on the most recent working day.
     let t2 = this._toTimestamp(new Date(end));
-    if (!this._isOpen(t2) || !this._isWorkingDay(t2)) {
+    if (!this._isOpen(t2) || !this._isWorkday(t2)) {
       t2 = this._previousClose(t2);
     }
 
@@ -180,7 +183,7 @@ export default class BusinessTimer {
     // days, minus weekend days, minus holidays in the range. Iteration's fine
     // for now.
     for (let t = t1 + DAY; t < t2; t += DAY) {
-      if (this._isWorkingDay(t)) {
+      if (this._isWorkday(t)) {
         diff += this._lookupHours(t).duration;
       }
     }
@@ -188,22 +191,22 @@ export default class BusinessTimer {
     return diff;
   }
 
-  public isOpenDay(dl: DateLike): boolean {
-    const ts = this._toTimestamp(dl);
-    return this._isWorkingDay(ts);
+  /** Check whether the provided day is a workday */
+  public isWorkday(date: DateLike): boolean {
+    const ts = this._toTimestamp(date);
+    return this._isWorkday(ts);
   }
 
-  public isOpenTime(dl: DateLike): boolean {
-    const ts = this._toTimestamp(dl);
+  /** Check whether the business is open at the given time */
+  public isOpen(datetime: DateLike): boolean {
+    const ts = this._toTimestamp(datetime);
     return this._isOpen(ts);
   }
 
-  /** Turn a date-like object into an epoch timestamp
+  /** Turn a date-like object into an offset-less timestamp
    *
-   *  This method enables neighboring calculations to avoid the nastiness of
-   *  dealing in local time by using a cached `Intl.DateTimeFormat` instance (if
-   *  available; see `this._dateTimeFormat`) to project inputs into
-   *  (offset-less) timestamps.
+   *  Discarding offset details allows downstream calculations to avoid the
+   *  vagaries of local time (see also: daylight savings).
    *
    *  It's all just math from here.
    **/
@@ -218,7 +221,7 @@ export default class BusinessTimer {
     return new Date(hackyISODate).getTime();
   }
 
-  private _isWorkingDay(ts: number): boolean {
+  private _isWorkday(ts: number): boolean {
     const daysSinceEpoch = Math.floor(ts / DAY);
     if (this._knownWorkingDays.has(daysSinceEpoch)) {
       return true;
@@ -255,7 +258,7 @@ export default class BusinessTimer {
       ts = startOfDay(ts + DAY);
     }
 
-    while (!this._isWorkingDay(ts)) {
+    while (!this._isWorkday(ts)) {
       ts += DAY;
     }
 
@@ -270,7 +273,7 @@ export default class BusinessTimer {
       ts = startOfDay(ts - DAY);
     }
 
-    while (!this._isWorkingDay(ts)) {
+    while (!this._isWorkday(ts)) {
       ts -= DAY;
     }
 
