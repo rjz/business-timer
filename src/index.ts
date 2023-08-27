@@ -217,7 +217,8 @@ export default class BusinessTimer {
     }
 
     const hackyISODate =
-      this._dateTimeFormat.format(d).replace(", ", "T") + "Z";
+      this._dateTimeFormat.format(d).replace(/\//g, '-').replace(", ", "T") + "Z";
+
     return new Date(hackyISODate).getTime();
   }
 
@@ -282,6 +283,7 @@ export default class BusinessTimer {
 
   private _lookupHours(ts: number): ParsedHours {
     const day = (Math.floor(ts / DAY) + 4) % 7; // ~ Date.getUTCDay
+
     return this._hours[day];
   }
 
